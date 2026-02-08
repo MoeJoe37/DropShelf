@@ -11,7 +11,11 @@ from PyQt6.QtCore import Qt, QMimeData, QUrl, QSize, QPoint, pyqtSignal, QFileIn
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import QDrag, QPixmap, QIcon, QAction, QColor, QDesktopServices, QCursor, QPainter, QKeySequence
 
-# --- Constants ---
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
 APP_ID = "DropShelf"
 SETTINGS_FILE = "dropshelf_settings.json"
 FAVORITES_FILE = "dropshelf_favorites.json"
@@ -34,6 +38,37 @@ def find_icon():
 
 ICON_NAME = find_icon()
 
+def is_startup_enabled():
+    if sys.platform != 'win32' or winreg is None:
+        return False
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+        winreg.QueryValueEx(key, APP_ID)
+        key.Close()
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+def set_startup(enable):
+    if sys.platform != 'win32' or winreg is None:
+        return
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
+        if enable:
+            path = f'"{sys.executable}"'
+            if not getattr(sys, 'frozen', False):
+                path = f'"{sys.executable}" "{os.path.abspath(sys.argv[0])}"'
+            winreg.SetValueEx(key, APP_ID, 0, winreg.REG_SZ, path)
+        else:
+            try:
+                winreg.DeleteValue(key, APP_ID)
+            except FileNotFoundError:
+                pass
+        key.Close()
+    except Exception as e:
+        print(f"Startup error: {e}")
+
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
     def mousePressEvent(self, event):
@@ -44,7 +79,7 @@ class ClickableLabel(QLabel):
 class DraggableItem(QFrame):
     def __init__(self, data_type, content, parent=None, is_favorite=False, hidden_from_main=False):
         super().__init__(parent)
-        self.data_type = data_type # 'file', 'text', 'url'
+        self.data_type = data_type 
         self.content = content
         self.parent_shelf = parent
         self.is_favorite = is_favorite
@@ -55,12 +90,10 @@ class DraggableItem(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.update_style()
 
-        # Layout: [Text] [Spacer] [Icon] [Star] [Close]
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 5, 5, 5)
         layout.setSpacing(8)
 
-        # 1. Text Info (Left)
         self.text_label = QLabel()
         self.text_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #e0e0e0;")
         
@@ -68,14 +101,12 @@ class DraggableItem(QFrame):
         if self.data_type == 'file':
             display_text = os.path.basename(self.content)
         
-        # Truncate long text for display
         font_metrics = self.text_label.fontMetrics()
         elided_text = font_metrics.elidedText(display_text, Qt.TextElideMode.ElideRight, 180)
         self.text_label.setText(elided_text)
         self.text_label.setToolTip(str(self.content))
-        layout.addWidget(self.text_label, 1) # Stretch factor 1
+        layout.addWidget(self.text_label, 1)
 
-        # 2. Icon / Preview (Right of text)
         self.icon_label = ClickableLabel()
         self.icon_label.setFixedSize(32, 32)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -84,7 +115,6 @@ class DraggableItem(QFrame):
         self.set_preview()
         layout.addWidget(self.icon_label)
 
-        # 3. Favorite Star Button
         self.star_btn = QPushButton("★" if self.is_favorite else "☆")
         self.star_btn.setFixedSize(24, 24)
         self.star_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -92,7 +122,6 @@ class DraggableItem(QFrame):
         self.update_star_style()
         layout.addWidget(self.star_btn)
 
-        # 4. Close Button
         self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(24, 24)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -157,13 +186,12 @@ class DraggableItem(QFrame):
             self.icon_label.setText("🔗")
             self.icon_label.setStyleSheet("font-size: 20px; border: none; background: transparent;")
             self.icon_label.setToolTip("Click to Open Link")
-        else: # Text
+        else: 
             self.icon_label.setText("T")
             self.icon_label.setStyleSheet("font-size: 20px; color: #4CAF50; border: none; background: transparent;")
 
     def toggle_favorite(self):
         self.is_favorite = not self.is_favorite
-        # If we unfavorite something that was hidden from main, show it again in main
         if not self.is_favorite and self.hidden_from_main:
              self.hidden_from_main = False
              
@@ -299,10 +327,10 @@ class HotkeyRecorder(QLineEdit):
             self.setText(result)
 
 class SettingsDialog(QDialog):
-    def __init__(self, current_hotkey, exit_min_to_tray, parent=None):
+    def __init__(self, current_hotkey, exit_min_to_tray, run_on_startup, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DropShelf Settings")
-        self.setFixedSize(320, 200)
+        self.setFixedSize(320, 240)
         self.setStyleSheet("""
             QDialog { background-color: #2b2b2b; color: white; }
             QLabel { color: #ccc; }
@@ -322,6 +350,10 @@ class SettingsDialog(QDialog):
         self.cb_exit_tray = QCheckBox("Exit button minimizes to system tray")
         self.cb_exit_tray.setChecked(exit_min_to_tray)
         layout.addWidget(self.cb_exit_tray)
+
+        self.cb_startup = QCheckBox("Run on Startup")
+        self.cb_startup.setChecked(run_on_startup)
+        layout.addWidget(self.cb_startup)
         
         layout.addStretch()
         self.save_btn = QPushButton("Save & Close")
@@ -331,7 +363,8 @@ class SettingsDialog(QDialog):
     def get_settings(self):
         return {
             "hotkey": self.hotkey_input.text(),
-            "exit_min_to_tray": self.cb_exit_tray.isChecked()
+            "exit_min_to_tray": self.cb_exit_tray.isChecked(),
+            "startup": self.cb_startup.isChecked()
         }
 
 class DropShelfWindow(QMainWindow):
@@ -419,14 +452,13 @@ class DropShelfWindow(QMainWindow):
         main_layout = QVBoxLayout(self.central_widget)
         main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # --- Header ---
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(5)
+        self.header_layout = QHBoxLayout()
+        self.header_layout.setSpacing(5)
 
         title_label = QLabel("DropShelf")
         title_label.setStyleSheet("color: #aaa; font-weight: bold; font-family: sans-serif;")
-        header_layout.addWidget(title_label)
-        header_layout.addStretch()
+        self.header_layout.addWidget(title_label)
+        self.header_layout.addStretch()
 
         def create_header_btn(text, tooltip, callback):
             btn = QPushButton(text)
@@ -441,27 +473,23 @@ class DropShelfWindow(QMainWindow):
             return btn
 
         self.btn_clear = create_header_btn("🗑", "Clear (Keeps Favorites)", self.clear_shelf)
-        header_layout.addWidget(self.btn_clear)
+        self.header_layout.addWidget(self.btn_clear)
         self.btn_settings = create_header_btn("⚙", "Settings", self.open_settings)
-        header_layout.addWidget(self.btn_settings)
+        self.header_layout.addWidget(self.btn_settings)
+        
         self.btn_tray = create_header_btn("▼", "Minimize to Tray", self.minimize_to_tray)
-        header_layout.addWidget(self.btn_tray)
         self.btn_minimize = create_header_btn("─", "Minimize", self.showMinimized)
-        header_layout.addWidget(self.btn_minimize)
         
         self.btn_close = create_header_btn("✕", "Exit App", self.handle_exit_click)
         self.btn_close.setStyleSheet("""
             QPushButton { background: transparent; color: #888; border: none; font-size: 14px; border-radius: 4px; }
             QPushButton:hover { background: #d32f2f; color: white; }
         """)
-        header_layout.addWidget(self.btn_close)
 
-        main_layout.addLayout(header_layout)
+        main_layout.addLayout(self.header_layout)
         
-        # Apply initial settings to UI
         self.apply_ui_settings()
 
-        # --- Tabs ---
         self.tab_layout = QHBoxLayout()
         self.tab_layout.setSpacing(10)
         self.tab_layout.setContentsMargins(5, 0, 5, 0)
@@ -481,7 +509,6 @@ class DropShelfWindow(QMainWindow):
         self.current_tab = "all"
         self.update_tab_styles()
 
-        # --- Scroll Area ---
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setStyleSheet("""
@@ -510,11 +537,22 @@ class DropShelfWindow(QMainWindow):
         self.scroll_layout.addWidget(self.empty_label)
 
     def apply_ui_settings(self):
+        for btn in [self.btn_tray, self.btn_minimize, self.btn_close]:
+            self.header_layout.removeWidget(btn)
+            btn.hide()
+
         if self.exit_min_to_tray:
-            self.btn_close.hide()
-            self.btn_tray.setToolTip("Minimize to Tray (Safety Mode)")
-            # In safety mode, tray button is the primary "close" visual for the top bar
+            self.header_layout.addWidget(self.btn_minimize)
+            self.header_layout.addWidget(self.btn_tray)
+            self.btn_minimize.show()
+            self.btn_tray.show()
+            self.btn_tray.setToolTip("Minimize to Tray")
         else:
+            self.header_layout.addWidget(self.btn_tray)
+            self.header_layout.addWidget(self.btn_minimize)
+            self.header_layout.addWidget(self.btn_close)
+            self.btn_tray.show()
+            self.btn_minimize.show()
             self.btn_close.show()
             self.btn_tray.setToolTip("Minimize to Tray")
 
@@ -588,25 +626,20 @@ class DropShelfWindow(QMainWindow):
             self.empty_label.hide()
 
     def handle_item_deletion_request(self, item):
-        # Safety Measurement: Unfavoriting or "Deleting" from Favorites tab 
-        # now always restores it to the main list first instead of wiping it.
         if self.current_tab == "fav":
             item.is_favorite = False
-            item.hidden_from_main = False # Restore to "All Items"
+            item.hidden_from_main = False 
             item.update_style()
             item.update_star_style()
             
             self.refresh_visibility()
             self.save_favorites()
         else:
-            # In All Items tab
             if item.is_favorite:
-                # Keep it in Favorites, but hide from the "Clipboard" view
                 item.hidden_from_main = True
                 self.refresh_visibility()
                 self.save_favorites()
             else:
-                # Not a favorite, delete permanently
                 self.remove_item(item)
 
     def load_settings(self):
@@ -628,11 +661,13 @@ class DropShelfWindow(QMainWindow):
             json.dump(data, f)
 
     def open_settings(self):
-        dlg = SettingsDialog(self.hotkey, self.exit_min_to_tray, self)
+        current_startup = is_startup_enabled()
+        dlg = SettingsDialog(self.hotkey, self.exit_min_to_tray, current_startup, self)
         if dlg.exec():
             results = dlg.get_settings()
             self.hotkey = results["hotkey"]
             self.exit_min_to_tray = results["exit_min_to_tray"]
+            set_startup(results["startup"])
             self.save_settings()
             self.setup_hotkey()
             self.apply_ui_settings()
