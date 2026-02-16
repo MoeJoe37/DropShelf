@@ -144,6 +144,35 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+# ─── Icon Loading ─────────────────────────────────────────────────────────────
+ICON_EXPLICIT_PATH = r"C:\Users\MoeJoe\Desktop\myapps\dropshelf\icon.ico"
+
+def load_app_icon():
+    """
+    Load the application icon with a priority chain:
+      1. Explicit project path (C:\\Users\\MoeJoe\\Desktop\\myapps\\dropshelf\\icon.ico)
+      2. Bundled resource path (supports PyInstaller _MEIPASS)
+      3. Qt built-in computer icon as final fallback
+    Returns a QIcon ready to be applied to any widget, dialog, or tray.
+    """
+    # 1. Explicit hardcoded project path
+    if os.path.exists(ICON_EXPLICIT_PATH):
+        return QIcon(ICON_EXPLICIT_PATH)
+
+    # 2. Bundled / alongside-the-script candidates
+    for name in ICON_CANDIDATES:
+        candidate = resource_path(name)
+        if os.path.exists(candidate):
+            return QIcon(candidate)
+
+    # 3. Qt built-in fallback — always works even without any icon file
+    from PyQt6.QtWidgets import QApplication, QStyle
+    app = QApplication.instance()
+    if app:
+        return app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+    return QIcon()
+
+
 def find_icon():
     for name in ICON_CANDIDATES:
         if os.path.exists(resource_path(name)):
@@ -410,6 +439,7 @@ class StatsDialog(QDialog):
     def __init__(self, items_data, theme, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DropShelf Statistics")
+        self.setWindowIcon(load_app_icon())
         self.setModal(True)
         self.setFixedSize(520, 480)
         t = THEMES[theme]
@@ -570,6 +600,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.parent_window = parent
         self.setWindowTitle("DropShelf Settings")
+        self.setWindowIcon(load_app_icon())
         self.setModal(True)
         self.setFixedSize(380, 520)
         self._build_ui()
@@ -1384,6 +1415,7 @@ class DropShelfWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint |
                             Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowIcon(load_app_icon())
 
         # State
         self.monitor_clipboard   = True
@@ -2356,11 +2388,7 @@ class DropShelfWindow(QMainWindow):
     def setup_tray_icon(self):
         try:
             self.tray_icon = QSystemTrayIcon(self)
-            icon_path = resource_path(ICON_NAME)
-            if os.path.exists(icon_path):
-                self.tray_icon.setIcon(QIcon(icon_path))
-            else:
-                self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+            self.tray_icon.setIcon(load_app_icon())
 
             menu = QMenu()
             t = THEMES[self.current_theme]
@@ -2644,6 +2672,7 @@ if __name__ == '__main__':
 
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)
+        app.setWindowIcon(load_app_icon())
         
         # Platform-specific font selection
         font = app.font()
