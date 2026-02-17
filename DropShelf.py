@@ -105,6 +105,7 @@ HISTORY_FILE   = os.path.join(DATA_DIR, 'history.json')
 DEFAULT_HOTKEY  = "ctrl+shift+x"
 ICON_CANDIDATES = ["pic.ico", "icon.ico", "pic.png", "icon.png"]
 MAX_HISTORY     = 200
+MAX_SHELF_ITEMS = 500   # cap on non-favorite shelf items to prevent memory growth
 
 class ItemType(str, Enum):
     TEXT = 'text'
@@ -1119,15 +1120,37 @@ class DraggableItem(QFrame):
 
     def _fetch_url_title(self):
         try:
-            fetcher = TitleFetcher(str(self.content), self)
+            # Stop any previously running fetcher for this item before starting a new one
+            self._stop_title_fetcher()
+            fetcher = TitleFetcher(str(self.content))
             fetcher.title_fetched.connect(self._on_title_fetched)
+            fetcher.finished.connect(fetcher.deleteLater)
             fetcher.start()
             self._title_fetcher = fetcher
         except Exception as e:
             log.exception(f"URL title fetch error: {e}")
 
+    def _stop_title_fetcher(self):
+        """Safely disconnect and stop any running title fetcher thread."""
+        fetcher = getattr(self, '_title_fetcher', None)
+        if fetcher is not None:
+            try:
+                fetcher.title_fetched.disconnect()
+            except Exception:
+                pass
+            try:
+                if fetcher.isRunning():
+                    fetcher.quit()
+                    fetcher.wait(500)
+            except Exception:
+                pass
+            self._title_fetcher = None
+
     def _on_title_fetched(self, url, title):
         try:
+            # Guard: if this widget has been scheduled for deletion, ignore the signal
+            if not hasattr(self, '_title_fetcher'):
+                return
             if str(self.content) == url:
                 fm = self.text_label.fontMetrics()
                 self.text_label.setText(fm.elidedText(title, Qt.TextElideMode.ElideRight, 180))
@@ -1242,7 +1265,14 @@ class DraggableItem(QFrame):
                 else:  # Linux and other Unix-like systems
                     subprocess.run(['xdg-open', file_path], check=False)
             else:
-                QApplication.clipboard().setText(str(self.content))
+                # Guard clipboard write so it doesn't re-trigger _on_clipboard_change
+                if self.shelf:
+                    self.shelf._clipboard_guard = True
+                try:
+                    QApplication.clipboard().setText(str(self.content))
+                finally:
+                    if self.shelf:
+                        self.shelf._clipboard_guard = False
         except Exception as e:
             log.exception(f"Handle open error: {e}")
             QMessageBox.warning(self, "Error", f"Failed to open: {e}")
@@ -1283,7 +1313,15 @@ class DraggableItem(QFrame):
             """)
 
             copy_action = QAction("Copy to Clipboard", self)
-            copy_action.triggered.connect(lambda: QApplication.clipboard().setText(str(self.content)))
+            def _safe_copy():
+                if self.shelf:
+                    self.shelf._clipboard_guard = True
+                try:
+                    QApplication.clipboard().setText(str(self.content))
+                finally:
+                    if self.shelf:
+                        self.shelf._clipboard_guard = False
+            copy_action.triggered.connect(_safe_copy)
             menu.addAction(copy_action)
 
             if self.data_type == ItemType.URL:
@@ -1433,6 +1471,10 @@ class DropShelfWindow(QMainWindow):
         self.clipboard_history   = deque(maxlen=MAX_HISTORY)
         self.window_geometry     = None
         self._templates_dialog   = None
+        # Guards & timers to prevent crashes during extended use
+        self._clipboard_guard    = False   # prevents clipboard feedback loops
+        self._loading            = False   # suppresses saves during load_favorites
+        self._save_timer         = None    # debounce timer for save_favorites
 
         try:
             self.load_settings()
@@ -1970,6 +2012,25 @@ class DropShelfWindow(QMainWindow):
             except:
                 pass
 
+    # ── Persistence (debounced) ───────────────────────────────────────────────
+    def _schedule_save(self):
+        """Debounce save_favorites — coalesces rapid successive calls into one write."""
+        try:
+            if self._loading:
+                return  # Never save during the initial load pass
+            if self._save_timer is None:
+                self._save_timer = QTimer(self)
+                self._save_timer.setSingleShot(True)
+                self._save_timer.timeout.connect(self._do_save_favorites)
+            # Reset the timer — only fires 250 ms after the LAST request
+            self._save_timer.start(250)
+        except Exception as e:
+            log.exception(f"Schedule save error: {e}")
+
+    def _do_save_favorites(self):
+        """Actual disk write, called by the debounce timer."""
+        self.save_favorites()
+
     # ── Clipboard Monitor ─────────────────────────────────────────────────────
     def setup_clipboard_monitor(self):
         try:
@@ -1981,6 +2042,10 @@ class DropShelfWindow(QMainWindow):
     def _on_clipboard_change(self):
         if not self.monitor_clipboard:
             return
+        # Guard against re-entrant calls (e.g. triggered by our own clipboard.setText())
+        if self._clipboard_guard:
+            return
+        self._clipboard_guard = True
         try:
             mime = self.clipboard.mimeData()
             if mime.hasUrls():
@@ -2001,6 +2066,8 @@ class DropShelfWindow(QMainWindow):
                     self.add_item(t, text)
         except Exception as e:
             log.exception(f"Clipboard change error: {e}")
+        finally:
+            self._clipboard_guard = False
 
     def _add_to_history(self, dtype, content):
         try:
@@ -2040,6 +2107,9 @@ class DropShelfWindow(QMainWindow):
                     if not is_favorite and w.is_favorite:
                         is_favorite = True
                     hidden_from_main = False
+                    # Stop background thread before destroying the old widget
+                    if hasattr(w, '_stop_title_fetcher'):
+                        w._stop_title_fetcher()
                     self.scroll_layout.removeWidget(w)
                     w.deleteLater()
                     break
@@ -2052,21 +2122,34 @@ class DropShelfWindow(QMainWindow):
                                  use_count=use_count)
             self.scroll_layout.insertWidget(0, item)
 
+            # Enforce item cap: prune oldest non-favorite items beyond the limit
+            all_items = self._get_all_items()
+            non_favs = [w for w in reversed(all_items) if not w.is_favorite]
+            if len(non_favs) > MAX_SHELF_ITEMS:
+                for old in non_favs[MAX_SHELF_ITEMS:]:
+                    if hasattr(old, '_stop_title_fetcher'):
+                        old._stop_title_fetcher()
+                    self.scroll_layout.removeWidget(old)
+                    old.deleteLater()
+
             if self.selection_mode:
                 item.set_selection_mode(True)
 
             self.refresh_visibility()
             if not (is_favorite and hidden_from_main):
-                self.save_favorites()
+                self._schedule_save()
         except Exception as e:
             log.exception(f"Add item error: {e}")
 
     def remove_item(self, item_widget):
         try:
+            # Stop any background thread BEFORE scheduling widget for deletion
+            if hasattr(item_widget, '_stop_title_fetcher'):
+                item_widget._stop_title_fetcher()
             self.scroll_layout.removeWidget(item_widget)
             item_widget.deleteLater()
             self.refresh_visibility()
-            self.save_favorites()
+            self._schedule_save()
         except Exception as e:
             log.exception(f"Remove item error: {e}")
 
@@ -2233,6 +2316,7 @@ class DropShelfWindow(QMainWindow):
         if not os.path.exists(FAVORITES_FILE):
             return
         try:
+            self._loading = True  # suppress debounced saves during initial load
             with open(FAVORITES_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             for entry in reversed(data):
@@ -2244,6 +2328,8 @@ class DropShelfWindow(QMainWindow):
                               use_count=entry.get('use_count', 0))
         except Exception:
             log.exception("Load favorites error")
+        finally:
+            self._loading = False
 
     def save_settings(self):
         """Save settings with atomic write to prevent corruption"""
@@ -2484,6 +2570,10 @@ class DropShelfWindow(QMainWindow):
             self.save_favorites()
             self.save_settings()
             keyboard.unhook_all()
+            # Stop all running title fetcher threads before exit
+            for item in self._get_all_items():
+                if hasattr(item, '_stop_title_fetcher'):
+                    item._stop_title_fetcher()
             try:
                 self.tray_icon.hide()
             except Exception:
