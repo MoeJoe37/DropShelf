@@ -82,7 +82,7 @@ pip install PyQt6 keyboard
 ## Installation
 
 ```bash
-git clone https://github.com/yourname/dropshelf.git
+git clone https://github.com/MoeJoe37/DropShelf.git
 cd dropshelf
 pip install PyQt6 keyboard
 python dropshelf_no_templates.py

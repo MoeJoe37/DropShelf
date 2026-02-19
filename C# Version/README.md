@@ -72,7 +72,7 @@ Right-clicking any item opens a context menu with additional options: Copy to Cl
 ## Building
 
 ```bash
-git clone https://github.com/yourname/dropshelf.git
+git clone https://github.com/MoeJoe37/DropShelf.git
 cd dropshelf
 dotnet build -c Release
 ```
