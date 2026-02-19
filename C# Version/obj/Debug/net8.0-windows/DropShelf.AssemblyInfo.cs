@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("DropShelf")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ef841579042cdc124a5b87eb84dbeeca5a25387f")]
 [assembly: System.Reflection.AssemblyProductAttribute("DropShelf")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DropShelf")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

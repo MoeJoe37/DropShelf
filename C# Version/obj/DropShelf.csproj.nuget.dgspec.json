@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\MoeJoe\\Downloads\\DropShelf\\DropShelf.csproj": {}
+    "C:\\Users\\MoeJoe\\Desktop\\myapps\\DropShelf\\Versions\\C# Version\\DropShelf.csproj": {}
   },
   "projects": {
-    "C:\\Users\\MoeJoe\\Downloads\\DropShelf\\DropShelf.csproj": {
+    "C:\\Users\\MoeJoe\\Desktop\\myapps\\DropShelf\\Versions\\C# Version\\DropShelf.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\MoeJoe\\Downloads\\DropShelf\\DropShelf.csproj",
+        "projectUniqueName": "C:\\Users\\MoeJoe\\Desktop\\myapps\\DropShelf\\Versions\\C# Version\\DropShelf.csproj",
         "projectName": "DropShelf",
-        "projectPath": "C:\\Users\\MoeJoe\\Downloads\\DropShelf\\DropShelf.csproj",
+        "projectPath": "C:\\Users\\MoeJoe\\Desktop\\myapps\\DropShelf\\Versions\\C# Version\\DropShelf.csproj",
         "packagesPath": "C:\\Users\\MoeJoe\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\MoeJoe\\Downloads\\DropShelf\\obj\\",
+        "outputPath": "C:\\Users\\MoeJoe\\Desktop\\myapps\\DropShelf\\Versions\\C# Version\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\MoeJoe\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -44,6 +44,12 @@
         "net8.0-windows7.0": {
           "targetAlias": "net8.0-windows",
           "dependencies": {
+            "Microsoft.NET.ILLink.Tasks": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[8.0.24, )",
+              "autoReferenced": true
+            },
             "QRCoder": {
               "target": "Package",
               "version": "[1.6.0, )"
@@ -66,6 +72,10 @@
               "version": "[8.0.24, 8.0.24]"
             },
             {
+              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
+              "version": "[8.0.24, 8.0.24]"
+            },
+            {
               "name": "Microsoft.NETCore.App.Host.win-x64",
               "version": "[8.0.24, 8.0.24]"
             },
@@ -74,7 +84,15 @@
               "version": "[8.0.24, 8.0.24]"
             },
             {
+              "name": "Microsoft.NETCore.App.Runtime.win-x64",
+              "version": "[8.0.24, 8.0.24]"
+            },
+            {
               "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.24, 8.0.24]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
               "version": "[8.0.24, 8.0.24]"
             }
           ],
@@ -87,6 +105,11 @@
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.103/PortableRuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "win-x64": {
+          "#import": []
         }
       }
     }

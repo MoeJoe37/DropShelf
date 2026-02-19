@@ -134,10 +134,6 @@ namespace DropShelf
             }
             catch { _tray.Icon = System.Drawing.SystemIcons.Application; }
 
-            // Single-click OR double-click both restore the window.
-            // DoubleClick fires after two Click events, so we guard with IsVisible
-            // to avoid toggling twice – ShowWindow is idempotent so it's safe.
-            _tray.Click       += (_, _) => Dispatcher.Invoke(ShowWindow);
             _tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowWindow);
 
             var menu = new System.Windows.Forms.ContextMenuStrip();
